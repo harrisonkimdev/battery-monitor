@@ -12,7 +12,7 @@ import shutil
 import ctypes
 from ctypes import c_int, c_void_p, c_char_p, c_uint32, POINTER, Structure, CFUNCTYPE
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 class BatteryMonitor:
     def __init__(self):
@@ -39,18 +39,46 @@ class BatteryMonitor:
             print(f"Error running ioreg: {e}")
             return None
     
+    def get_power_management_data(self):
+        """pmset을 사용하여 전력 관리 정보 가져오기 (Low Power Mode 등)"""
+        try:
+            result = subprocess.run(['pmset', '-g', 'batt'], 
+                                 capture_output=True, text=True, check=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            print(f"Error running pmset: {e}")
+            return None
+    
+    def get_hardware_info(self):
+        """시스템 하드웨어 정보 가져오기"""
+        try:
+            result = subprocess.run(['system_profiler', 'SPHardwareDataType'], 
+                                 capture_output=True, text=True, check=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            print(f"Error running system_profiler for hardware: {e}")
+            return None
+    
     def check_ios_devices(self):
         """연결된 iOS 디바이스 확인"""
-        # 1. MobileDevice.framework 사용 (최우선 - CoconutBattery 방식)
-        ios_devices = self._get_ios_devices_mobiledevice()
-        if ios_devices:
-            return ios_devices
+        try:
+            # GUI에서 사용할 때는 MobileDevice.framework 호출을 건너뛰고
+            # 더 안전한 방법들만 사용
             
-        # 2. libimobiledevice 사용
-        if shutil.which('ideviceinfo'):
-            return self._get_ios_devices_libimobiledevice()
-        else:
+            # 1. libimobiledevice 사용 (가장 안전)
+            if shutil.which('ideviceinfo'):
+                return self._get_ios_devices_libimobiledevice()
+            
+            # 2. system_profiler 사용 (기본 정보만)
             return self._get_ios_devices_system_profiler()
+            
+            # MobileDevice.framework는 CLI에서만 사용하도록 임시로 비활성화
+            # ios_devices = self._get_ios_devices_mobiledevice()
+            # if ios_devices:
+            #     return ios_devices
+        except Exception as e:
+            print(f"iOS 디바이스 확인 중 오류: {e}")
+            return []
     
     def _get_ios_devices_libimobiledevice(self):
         """libimobiledevice를 사용하여 iOS 디바이스 정보 가져오기"""
@@ -205,8 +233,8 @@ class BatteryMonitor:
                 )
                 
                 if result == 0:
-                    # 짧은 대기 시간 제공
-                    time.sleep(1)
+                    # 매우 짧은 대기 시간으로 변경 (GUI 응답성 향상)
+                    time.sleep(0.1)
                     devices = found_devices.copy()
                     
             except AttributeError:
@@ -369,6 +397,11 @@ class BatteryMonitor:
             'average_temperature': r'"AverageTemperature"\s*=\s*(\d+)',
             'max_temperature': r'"MaximumTemperature"\s*=\s*(\d+)',
             'min_temperature': r'"MinimumTemperature"\s*=\s*(\d+)',
+            # 배터리 제조 정보
+            'manufacture_date': r'"ManufactureDate"\s*=\s*(\d+)',
+            'manufacturer': r'"Manufacturer"\s*=\s*"([^"]+)"',
+            'pack_lot_code': r'"PackLotCode"\s*=\s*"([^"]+)"',
+            'battery_serial': r'"BatterySerialNumber"\s*=\s*"([^"]+)"',
         }
         
         for key, pattern in patterns.items():
@@ -377,6 +410,95 @@ class BatteryMonitor:
                 ioreg_info[key] = match.group(1)
         
         return ioreg_info
+    
+    def parse_power_management_data(self, data):
+        """pmset 출력에서 전력 관리 정보 파싱 (Low Power Mode 등)"""
+        if not data:
+            return {}
+        
+        pm_info = {}
+        
+        # Low Power Mode 감지
+        if 'lowpowermode' in data.lower():
+            # macOS에서 Low Power Mode 상태 확인
+            if re.search(r'lowpowermode\s+1', data, re.IGNORECASE):
+                pm_info['low_power_mode'] = True
+            else:
+                pm_info['low_power_mode'] = False
+        else:
+            pm_info['low_power_mode'] = False
+        
+        # 배터리 상태에서 현재 전력 사용량 추출
+        power_match = re.search(r'(\d+)W', data)
+        if power_match:
+            pm_info['current_power_usage'] = int(power_match.group(1))
+        
+        # 어댑터 연결 상태
+        if "AC Power" in data:
+            pm_info['power_adapter_connected'] = True
+        elif "Battery Power" in data:
+            pm_info['power_adapter_connected'] = False
+        
+        return pm_info
+    
+    def parse_hardware_info(self, data):
+        """하드웨어 정보 파싱"""
+        if not data:
+            return {}
+        
+        hw_info = {}
+        
+        patterns = {
+            'model_name': r'Model Name:\s*(.+)',
+            'model_identifier': r'Model Identifier:\s*(.+)',
+            'processor': r'Processor Name:\s*(.+)',
+            'processor_speed': r'Processor Speed:\s*(.+)',
+            'number_of_processors': r'Number of Processors:\s*(\d+)',
+            'total_cores': r'Total Number of Cores:\s*(\d+)',
+            'memory': r'Memory:\s*(.+)',
+            'boot_rom': r'Boot ROM Version:\s*(.+)',
+            'serial': r'Serial Number \(system\):\s*(.+)',
+            'hardware_uuid': r'Hardware UUID:\s*(.+)',
+        }
+        
+        for key, pattern in patterns.items():
+            match = re.search(pattern, data)
+            if match:
+                hw_info[key] = match.group(1).strip()
+        
+        return hw_info
+    
+    def format_manufacture_date(self, date_raw):
+        """제조일 포맷팅 (UNIX timestamp에서 날짜로)"""
+        if date_raw:
+            try:
+                # macOS 배터리 제조일은 보통 Mac Epoch (2001-01-01 기준)에서의 초
+                timestamp = int(date_raw)
+                # Mac Epoch는 2001-01-01 00:00:00 UTC
+                import calendar
+                from datetime import datetime, timezone
+                
+                mac_epoch = datetime(2001, 1, 1, tzinfo=timezone.utc)
+                manufacture_date = mac_epoch + timedelta(seconds=timestamp)
+                return manufacture_date.strftime('%Y-%m-%d')
+            except:
+                return date_raw
+        return None
+    
+    def calculate_battery_age(self):
+        """배터리 나이 계산 (제조일 기준)"""
+        manufacture_date = self.battery_data.get('manufacture_date')
+        if manufacture_date:
+            formatted_date = self.format_manufacture_date(manufacture_date)
+            if formatted_date:
+                try:
+                    from datetime import datetime
+                    mfg_date = datetime.strptime(formatted_date, '%Y-%m-%d')
+                    age = datetime.now() - mfg_date
+                    return age.days
+                except:
+                    pass
+        return None
     
     def calculate_battery_health(self):
         """배터리 건강도 계산"""
@@ -440,12 +562,22 @@ class BatteryMonitor:
         ioreg_data = self.get_ioreg_data()
         ioreg_info = self.parse_ioreg_data(ioreg_data)
         
+        # 전력 관리 데이터 (Low Power Mode 등)
+        pm_data = self.get_power_management_data()
+        pm_info = self.parse_power_management_data(pm_data)
+        
+        # 하드웨어 정보
+        hw_data = self.get_hardware_info()
+        hw_info = self.parse_hardware_info(hw_data)
+        
         # iOS 디바이스 확인
         self.ios_devices = self.check_ios_devices()
         
         # 데이터 합치기
         self.battery_data.update(sp_info)
         self.battery_data.update(ioreg_info)
+        self.battery_data.update(pm_info)
+        self.battery_data.update(hw_info)
         
     def display_battery_info(self):
         """배터리 정보를 보기 좋게 표시"""

@@ -17,26 +17,41 @@ import time
 import threading
 from datetime import datetime
 from battery_monitor import BatteryMonitor
+from battery_history import BatteryHistoryManager
 
 class BatteryMonitorGUI:
     def __init__(self):
-        # macOS 앱 번들에서 메뉴바 문제 해결을 위한 설정
+        # macOS 앱 번들에서 메뉴바 문제 해결을 위한 강화된 설정
         try:
             # Tkinter 루트 윈도우 생성 전 환경 설정
             import os
             os.environ['TK_SILENCE_DEPRECATION'] = '1'
+            # macOS 메뉴바 비활성화
+            os.environ['TKINTER_NO_MENUBAR'] = '1'
         except:
             pass
             
         self.root = tk.Tk()
+        
+        # 메뉴바 완전 비활성화 (여러 방법 시도)
+        try:
+            # 방법 1: 빈 메뉴바 설정
+            self.root.option_add('*tearOff', False)
+            # 방법 2: macOS 메뉴 컴맨드 비활성화
+            self.root.tk.call('set', 'tcl_platform(os)', 'unix')
+        except:
+            pass
+        
         self.root.title("🔋 Battery Monitor")
         self.root.geometry("800x900")
         self.root.resizable(True, True)
         
-        # macOS에서 앱 번들 실행 시 메뉴바 문제 해결
+        # macOS에서 앱 번들 실행 시 메뉴바 문제 해결 (강화)
         try:
             # 기본 메뉴바를 명시적으로 설정하지 않음
             self.root.createcommand('tk::mac::Quit', self.on_closing)
+            # 메뉴 생성 방지
+            self.root.tk.call('package', 'require', 'Tk')
         except:
             pass
         
@@ -45,6 +60,9 @@ class BatteryMonitorGUI:
         
         # 배터리 모니터 인스턴스
         self.battery_monitor = BatteryMonitor()
+        
+        # 히스토리 매니저 인스턴스
+        self.history_manager = BatteryHistoryManager()
         
         # GUI 구성
         self.create_widgets()
@@ -88,8 +106,16 @@ class BatteryMonitorGUI:
         title_label = ttk.Label(title_frame, text="🔋 Battery Monitor", style='Title.TLabel')
         title_label.pack(side=tk.LEFT)
         
+        # 버튼 프레임
+        button_frame = ttk.Frame(title_frame)
+        button_frame.pack(side=tk.RIGHT)
+        
+        # 히스토리 버튼
+        history_btn = ttk.Button(button_frame, text="📊 히스토리", command=self.show_history)
+        history_btn.pack(side=tk.RIGHT, padx=(0, 5))
+        
         # 새로고침 버튼
-        refresh_btn = ttk.Button(title_frame, text="🔄 새로고침", command=self.refresh_data)
+        refresh_btn = ttk.Button(button_frame, text="🔄 새로고침", command=self.refresh_data)
         refresh_btn.pack(side=tk.RIGHT)
         
         # 자동 새로고침 체크박스
@@ -176,6 +202,9 @@ class BatteryMonitorGUI:
             # 상태 업데이트
             now = datetime.now().strftime('%H:%M:%S')
             self.status_bar.config(text=f"마지막 업데이트: {now}")
+            
+            # 히스토리 저장 (배경에서 실행)
+            self.save_history_data()
             
         except Exception as e:
             messagebox.showerror("오류", f"UI 업데이트 중 오류: {e}")
@@ -442,6 +471,32 @@ class BatteryMonitorGUI:
                 return "#dc3545"  # 빨간색
         except:
             return None
+    
+    def save_history_data(self):
+        """히스토리 데이터 저장"""
+        def save_background():
+            try:
+                # Mac 배터리 데이터 저장
+                if self.battery_monitor.battery_data:
+                    self.history_manager.save_mac_battery_data(self.battery_monitor.battery_data)
+                
+                # iOS 디바이스 데이터 저장
+                for device in self.battery_monitor.ios_devices:
+                    self.history_manager.save_ios_battery_data(device)
+                    
+            except Exception as e:
+                print(f"히스토리 저장 오류: {e}")
+        
+        # 백그라운드 스레드에서 실행
+        threading.Thread(target=save_background, daemon=True).start()
+    
+    def show_history(self):
+        """히스토리 뷰어 표시"""
+        try:
+            from history_viewer import HistoryViewer
+            viewer = HistoryViewer(parent=self.root)
+        except Exception as e:
+            messagebox.showerror("오류", f"히스토리 뷰어를 열 수 없습니다: {e}")
     
     def toggle_auto_refresh(self):
         """자동 새로고침 토글"""
