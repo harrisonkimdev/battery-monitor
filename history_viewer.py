@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Battery History Viewer GUI
-배터리 히스토리 시각화 및 관리 도구
+Battery history visualization and management tool
 """
 
 import tkinter as tk
@@ -14,7 +14,7 @@ from battery_history import BatteryHistoryManager
 
 class HistoryViewer:
     def __init__(self, parent=None):
-        """History Viewer 초기화"""
+        """Initialize History Viewer"""
         self.parent = parent
         
         if parent:
@@ -25,71 +25,71 @@ class HistoryViewer:
         self.window.title("🔋 Battery History Viewer")
         self.window.geometry("1000x700")
         
-        # History Manager 초기화
+        # Initialize History Manager
         self.history_manager = BatteryHistoryManager()
         
-        # GUI 구성
+        # Setup GUI
         self.create_widgets()
         self.load_data()
         
     def create_widgets(self):
-        """GUI 위젯 생성"""
-        # 메인 프레임
+        """Create GUI widgets"""
+        # Main frame
         main_frame = ttk.Frame(self.window, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 제목
+        # Title
         title_label = ttk.Label(main_frame, text="🔋 Battery History Viewer", 
                                font=('SF Pro Display', 16, 'bold'))
         title_label.pack(pady=(0, 20))
         
-        # 컨트롤 프레임
+        # Control frame
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 20))
         
-        ttk.Button(control_frame, text="🔄 새로고침", command=self.load_data).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(control_frame, text="💾 백업", command=self.create_backup).pack(side=tk.LEFT)
+        ttk.Button(control_frame, text="🔄 Refresh", command=self.load_data).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(control_frame, text="💾 Backup", command=self.create_backup).pack(side=tk.LEFT)
         
-        # 차트 프레임
+        # Chart frame
         self.chart_frame = ttk.Frame(main_frame)
         self.chart_frame.pack(fill=tk.BOTH, expand=True)
         
         self.create_chart()
         
     def create_chart(self):
-        """차트 생성"""
-        # matplotlib Figure 생성
+        """Create chart"""
+        # Create matplotlib Figure
         self.fig = Figure(figsize=(12, 8), dpi=100)
         self.ax = self.fig.add_subplot(1, 1, 1)
         
-        # 캔버스 생성
+        # Create canvas
         self.canvas = FigureCanvasTkAgg(self.fig, self.chart_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
     def load_data(self):
-        """데이터 로드 및 차트 업데이트"""
+        """Load data and update chart"""
         try:
-            # Mac 배터리 히스토리 가져오기
+            # Get Mac battery history
             history_data = self.history_manager.get_mac_history(days=30)
             
             if not history_data:
                 self.ax.clear()
-                self.ax.text(0.5, 0.5, '히스토리 데이터가 없습니다\n\n배터리 모니터를 실행하여\n데이터를 수집해주세요', 
+                self.ax.text(0.5, 0.5, 'No history data available\n\nPlease run Battery Monitor\nto collect data', 
                            ha='center', va='center', transform=self.ax.transAxes, fontsize=14)
                 self.canvas.draw()
                 return
             
-            # 차트 그리기
+            # Draw chart
             self.update_chart(history_data)
             
         except Exception as e:
-            messagebox.showerror("오류", f"데이터를 로드할 수 없습니다: {e}")
+            messagebox.showerror("Error", f"Cannot load data: {e}")
     
     def update_chart(self, history_data):
-        """차트 업데이트"""
+        """Update chart"""
         self.ax.clear()
         
-        # 데이터 준비
+        # Prepare data
         timestamps = []
         health_values = []
         cycle_values = []
@@ -97,7 +97,7 @@ class HistoryViewer:
         for record in history_data:
             if record.get('timestamp') and record.get('battery_health'):
                 try:
-                    # 타임스탬프 파싱
+                    # Parse timestamp
                     if isinstance(record['timestamp'], str):
                         dt = datetime.fromisoformat(record['timestamp'])
                     else:
@@ -110,55 +110,55 @@ class HistoryViewer:
                     continue
         
         if not timestamps:
-            self.ax.text(0.5, 0.5, '유효한 데이터가 없습니다', ha='center', va='center', transform=self.ax.transAxes)
+            self.ax.text(0.5, 0.5, 'No valid data available', ha='center', va='center', transform=self.ax.transAxes)
             self.canvas.draw()
             return
         
-        # 배터리 건강도 차트
-        self.ax.plot(timestamps, health_values, 'b-', linewidth=2, marker='o', markersize=4, label='배터리 건강도')
+        # Battery health chart
+        self.ax.plot(timestamps, health_values, 'b-', linewidth=2, marker='o', markersize=4, label='Battery Health')
         
-        # 보조 y축 생성 (사이클 수)
+        # Create secondary y-axis (cycle count)
         ax2 = self.ax.twinx()
-        ax2.plot(timestamps, cycle_values, 'r-', linewidth=2, marker='s', markersize=4, label='사이클 수')
+        ax2.plot(timestamps, cycle_values, 'r-', linewidth=2, marker='s', markersize=4, label='Cycle Count')
         
-        # 축 설정
-        self.ax.set_xlabel('날짜', fontsize=12)
-        self.ax.set_ylabel('배터리 건강도 (%)', color='b', fontsize=12)
-        ax2.set_ylabel('사이클 수', color='r', fontsize=12)
+        # Axis settings
+        self.ax.set_xlabel('Date', fontsize=12)
+        self.ax.set_ylabel('Battery Health (%)', color='b', fontsize=12)
+        ax2.set_ylabel('Cycle Count', color='r', fontsize=12)
         
-        self.ax.set_title('배터리 히스토리 (최근 30일)', fontsize=14, fontweight='bold')
+        self.ax.set_title('Battery History (Last 30 Days)', fontsize=14, fontweight='bold')
         
-        # 그리드
+        # Grid
         self.ax.grid(True, alpha=0.3)
         
-        # 범례
+        # Legend
         lines1, labels1 = self.ax.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         self.ax.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
         
-        # 날짜 형식 설정
+        # Date format
         self.fig.autofmt_xdate()
         
-        # 레이아웃 조정
+        # Layout adjustment
         self.fig.tight_layout()
         self.canvas.draw()
     
     def create_backup(self):
-        """백업 생성"""
+        """Create backup"""
         try:
             backup_path = self.history_manager.create_backup()
-            messagebox.showinfo("백업 완료", f"백업이 생성되었습니다:\n{backup_path}")
+            messagebox.showinfo("Backup Complete", f"Backup created:\n{backup_path}")
         except Exception as e:
-            messagebox.showerror("백업 오류", f"백업을 생성할 수 없습니다: {e}")
+            messagebox.showerror("Backup Error", f"Cannot create backup: {e}")
     
     def run(self):
-        """애플리케이션 실행"""
+        """Run application"""
         if not self.parent:
             self.window.protocol("WM_DELETE_WINDOW", self.window.quit)
             self.window.mainloop()
 
 def main():
-    """메인 함수"""
+    """Main function"""
     app = HistoryViewer()
     app.run()
 
