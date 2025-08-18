@@ -1,116 +1,147 @@
 # 🔋 Battery Monitor
 
-macOS용 배터리 모니터링 도구 - CoconutBattery의 오픈소스 대안
+A comprehensive battery monitoring tool for macOS - Open source alternative to CoconutBattery
 
-## ✨ 주요 기능
+## ✨ Key Features
 
-- **macOS 배터리 정보**: 현재 충전량, 건강도, 사이클 수, 온도, 전압 등
-- **iOS 디바이스 지원**: 연결된 iPhone/iPad의 배터리 정보 (MobileDevice.framework 사용)
-- **실시간 모니터링**: 자동 새로고침으로 실시간 정보 업데이트
-- **GUI 인터페이스**: 사용하기 쉬운 그래픽 인터페이스
-- **CLI 버전**: 터미널에서 사용 가능한 명령줄 버전
+### 🖥️ macOS Battery Monitoring
+- **Real-time Battery Info**: Current charge, health percentage, cycle count, temperature, voltage
+- **Power Management**: Low Power Mode detection, charging status, time remaining
+- **Hardware Details**: Model identifier, serial number, firmware version
+- **Technical Data**: Design capacity vs current capacity, manufacture date, battery age
 
-## 🚀 사용 방법
+### 📱 iOS Device Support
+- **Connected iPhone/iPad**: Battery info using MobileDevice.framework and libimobiledevice
+- **Device Information**: Model, iOS version, serial number, storage capacity
+- **Battery Metrics**: Charge percentage, health, cycles, temperature
+- **Connection Status**: USB connection type, charging power
 
-### GUI 버전 (권장)
+### 📊 Advanced History Tracking
+- **Timeline History**: Complete battery history with SQLite database
+- **Interactive Charts**: Battery health and cycle trends visualization
+- **Monthly Summaries**: Average health and cycle statistics by month
+- **Multi-device Support**: Separate tracking for Mac and iOS devices
+- **Smart Backup**: Automatic backup with JSON export capability
+- **Trend Analysis**: Health degradation patterns and predictions
+
+### 🎨 User Interface
+- **Modern GUI**: Clean, intuitive graphical interface
+- **History Viewer**: Advanced charts with matplotlib integration
+- **Real-time Updates**: Auto-refresh with configurable intervals
+- **CLI Version**: Terminal-based version for automation
+
+## 🚀 Usage
+
+### GUI Version (Recommended)
 ```bash
 python3 battery_monitor_gui.py
 ```
 
-### CLI 버전
+### History Viewer (Standalone)
+```bash
+python3 history_viewer.py
+```
+
+### CLI Version
 ```bash
 python3 battery_monitor.py
 ```
 
-## 📱 iOS 디바이스 지원
+## 📱 iOS Device Support
 
-이 앱은 CoconutBattery와 동일한 방식으로 iOS 디바이스의 배터리 정보를 가져옵니다:
+This app uses the same methods as CoconutBattery to retrieve iOS device battery information:
 
-1. **MobileDevice.framework** (최우선): Apple의 비공개 프레임워크를 직접 사용
-2. **libimobiledevice** (대체): `brew install libimobiledevice` 설치 후 사용
-3. **system_profiler** (기본): 제한적이지만 기본적인 디바이스 감지
+1. **MobileDevice.framework** (Priority): Direct use of Apple's private framework
+2. **libimobiledevice** (Alternative): Install with `brew install libimobiledevice`
+3. **system_profiler** (Basic): Limited but basic device detection
 
-### iOS 디바이스 연결하기
-1. Lightning/USB-C 케이블로 iOS 디바이스를 Mac에 연결
-2. "이 컴퓨터를 신뢰하시겠습니까?" 메시지에서 "신뢰" 선택
-3. Battery Monitor 실행
+### Connecting iOS Devices
+1. Connect your iOS device to Mac using Lightning/USB-C cable
+2. Select "Trust" when prompted "Trust this computer?"
+3. Run Battery Monitor
 
-## 🏗️ 앱 번들 생성
+## 🏗️ Building Native App
 
-macOS 네이티브 앱으로 만들려면:
+To create a macOS native application:
 
-1. py2app 설치:
+1. Install py2app:
    ```bash
    pip3 install py2app
    ```
 
-2. 앱 번들 생성:
+2. Build app bundle:
    ```bash
    python3 setup.py py2app
    ```
 
-3. 생성된 앱은 `dist/Battery Monitor.app`에 있습니다
+3. The generated app will be in `dist/Battery Monitor.app`
 
-## 📋 시스템 요구사항
+## 📦 Dependencies
 
-- macOS 10.15 Catalina 이상
-- Python 3.7 이상
-- Tkinter (Python 기본 포함)
+```bash
+pip3 install matplotlib pandas
+```
 
-## 🔧 기술적 세부사항
+## 📋 System Requirements
 
-### macOS 배터리 정보
-- `system_profiler SPPowerDataType`: 기본 배터리 정보
-- `ioreg -rc AppleSmartBattery`: 상세 기술 정보
+- macOS 10.15 Catalina or later
+- Python 3.7 or later
+- Tkinter (included with Python by default)
 
-### iOS 배터리 정보
-- **MobileDevice.framework**: Apple 비공개 API 직접 호출
-  - `AMDeviceNotificationSubscribe`: 디바이스 연결 모니터링
-  - `AMDeviceConnect`: 디바이스 연결
-  - `AMDeviceCopyValue`: 배터리 정보 추출
-- **ctypes**: Python에서 C 라이브러리 호출
-- **CoreFoundation**: Apple 객체 파싱
+## 🔧 Technical Details
 
-## 📊 표시 정보
+### macOS Battery Information
+- `system_profiler SPPowerDataType`: Basic battery information
+- `ioreg -rc AppleSmartBattery`: Detailed technical information
 
-### macOS 배터리
-- 현재 충전량 (%)
-- 충전 상태 (충전 중/완료/배터리 사용)
-- 남은 시간
-- 사이클 수
-- 배터리 건강도 (%)
-- 설계/현재/최대 용량 (mAh)
-- 전압 (V) / 전류 (mA)
+### iOS Battery Information
+- **MobileDevice.framework**: Direct calls to Apple's private API
+  - `AMDeviceNotificationSubscribe`: Device connection monitoring
+  - `AMDeviceConnect`: Device connection
+  - `AMDeviceCopyValue`: Battery information extraction
+- **ctypes**: Python C library calls
+- **CoreFoundation**: Apple object parsing
 
-### iOS 디바이스
-- 디바이스 이름, 모델, iOS 버전
-- 배터리 충전량 (%)
-- 충전 상태
-- 전압
-- 연결 방식
+## 📊 Display Information
 
-## ⚠️ 주의사항
+### macOS Battery
+- Current charge level (%)
+- Charge status (Charging/Charged/Battery)
+- Time remaining
+- Cycle count
+- Battery health (%)
+- Design/Current/Max capacity (mAh)
+- Voltage (V) / Current (mA)
 
-- iOS 배터리 정보는 Apple의 비공개 API를 사용하므로 향후 macOS 업데이트에서 동작하지 않을 수 있습니다
-- 일부 기능은 관리자 권한이 필요할 수 있습니다
-- MobileDevice.framework는 Apple 개발자만 문서화된 API이므로 예상과 다르게 동작할 수 있습니다
+### iOS Devices
+- Device name, model, iOS version
+- Battery charge level (%)
+- Charging status
+- Voltage
+- Connection type
 
-## 📄 라이선스
+## ⚠️ Important Notes
 
-MIT License - 자유롭게 사용, 수정, 배포 가능
+- iOS battery information uses Apple's private APIs and may not work with future macOS updates
+- Some features may require administrator privileges
+- MobileDevice.framework is a developer-only documented API and may behave unexpectedly
 
-## 🤝 기여하기
+## 📄 License
 
-1. 이 저장소를 포크합니다
-2. 기능 브랜치를 만듭니다 (`git checkout -b feature/amazing-feature`)
-3. 변경사항을 커밋합니다 (`git commit -m 'Add amazing feature'`)
-4. 브랜치에 푸시합니다 (`git push origin feature/amazing-feature`)
-5. Pull Request를 만듭니다
+MIT License - Free to use, modify, and distribute
 
-## 🐛 버그 리포트 / 기능 요청
+## 🤝 Contributing
 
-[GitHub Issues](https://github.com/harrisonkim/battery-monitor/issues)에서 버그를 신고하거나 새로운 기능을 요청해주세요.
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Create a Pull Request
+
+## 🐛 Bug Reports / Feature Requests
+
+Please report bugs or request new features at [GitHub Issues](https://github.com/harrisonkim/battery-monitor/issues).
 
 ---
 
-**CoconutBattery**의 오픈소스 대안으로 만들어진 프로젝트입니다. 💚
+Created as an open source alternative to **CoconutBattery**. 💚
