@@ -102,7 +102,7 @@ class BatteryMonitor:
     
     def _get_ios_device_info(self, device_id):
         """특정 iOS 디바이스의 배터리 정보 가져오기"""
-        device_info = {'device_id': device_id}
+        device_info = {'device_id': device_id, 'connection': 'USB'}
         
         try:
             # 기본 디바이스 정보
@@ -124,10 +124,150 @@ class BatteryMonitor:
                         device_info['ios_version'] = value
                     elif key == 'SerialNumber':
                         device_info['serial'] = value
+                    elif key == 'DeviceClass':
+                        device_info['device_class'] = value
             
-            # 배터리 정보 (iOS에서 직접 가져오기는 제한적)
-            # 일반적으로는 디바이스가 충전 중인지 여부만 확인 가능
+            # 배터리 정보 가져오기 시도 (ideviceinfo -q 사용)
+            try:
+                battery_result = subprocess.run(['ideviceinfo', '-u', device_id, '-q', 'com.apple.mobile.battery'], 
+                                              capture_output=True, text=True, check=True)
+                
+                battery_lines = battery_result.stdout.split('\n')
+                for line in battery_lines:
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        if key == 'BatteryCurrentCapacity':
+                            device_info['battery_capacity'] = value
+                            device_info['method'] = 'libimobiledevice'
+                        elif key == 'BatteryIsCharging':
+                            device_info['battery_charging'] = value
+                        elif key == 'ExternalChargeCapable':
+                            device_info['external_charge_capable'] = value
+                        elif key == 'ExternalConnected':
+                            device_info['external_connected'] = value
+                        elif key == 'FullyCharged':
+                            device_info['fully_charged'] = value
+                        elif key == 'GasGaugeCapability':
+                            device_info['gas_gauge_capability'] = value
+                        elif key == 'HasBattery':
+                            device_info['has_battery'] = value
+            except subprocess.CalledProcessError:
+                # 배터리 정보 가져오기 실패 시 기본값 설정
+                device_info['battery_capacity'] = 'Unknown'
+                device_info['battery_charging'] = 'Unknown'
             
+            # 추가로 ideviceinfo -k로 더 많은 정보 시도
+            battery_keys = [
+                'BatteryCurrentCapacity',
+                'BatteryIsCharging', 
+                'ExternalConnected',
+                'FullyCharged',
+                'HasBattery',
+                'GasGaugeCapability',
+                # 배터리 건강도 관련 정보
+                'BatteryHealthManagement',
+                'BatteryHealthMetrics',
+                'BatteryData',
+                'CycleCount',
+                'DesignCapacity',
+                'NominalChargeCapacity',
+                'MaximumCapacityPercent',
+                'BatteryTemperature'
+            ]
+            
+            for key in battery_keys:
+                try:
+                    key_result = subprocess.run(['ideviceinfo', '-u', device_id, '-k', key], 
+                                              capture_output=True, text=True, check=True)
+                    if key_result.stdout.strip():
+                        value = key_result.stdout.strip()
+                        if key == 'BatteryCurrentCapacity':
+                            device_info['battery_capacity'] = value
+                            device_info['method'] = 'libimobiledevice'
+                        elif key == 'BatteryIsCharging':
+                            device_info['battery_charging'] = value
+                        elif key == 'ExternalConnected':
+                            device_info['external_connected'] = value
+                        elif key == 'FullyCharged':
+                            device_info['fully_charged'] = value
+                        elif key == 'HasBattery':
+                            device_info['has_battery'] = value
+                        elif key == 'GasGaugeCapability':
+                            device_info['gas_gauge_capability'] = value
+                except subprocess.CalledProcessError:
+                    continue
+            
+            # idevicediagnostics를 사용하여 추가 배터리 정보 수집 시도
+            if shutil.which('idevicediagnostics'):
+                try:
+                    # diagnostics 명령으로 배터리 정보 수집 (XML 형식)
+                    diag_result = subprocess.run(['idevicediagnostics', '-u', device_id, 'diagnostics'], 
+                                                capture_output=True, text=True, check=True)
+                    
+                    if diag_result.stdout:
+                        diag_output = diag_result.stdout
+                        
+                        # XML에서 GasGauge 섹션 찾기
+                        if 'GasGauge' in diag_output:
+                            # CycleCount 추출
+                            cycle_match = re.search(r'<key>CycleCount</key>\s*<integer>(\d+)</integer>', diag_output)
+                            if cycle_match:
+                                device_info['cycle_count'] = cycle_match.group(1)
+                                device_info['method'] = 'idevicediagnostics'
+                            
+                            # DesignCapacity 추출
+                            design_match = re.search(r'<key>DesignCapacity</key>\s*<integer>(\d+)</integer>', diag_output)
+                            if design_match:
+                                device_info['design_capacity'] = design_match.group(1)
+                            
+                            # FullChargeCapacity 추출 (현재 배터리 충전량 %)
+                            full_charge_match = re.search(r'<key>FullChargeCapacity</key>\s*<integer>(\d+)</integer>', diag_output)
+                            if full_charge_match:
+                                full_charge_capacity = int(full_charge_match.group(1))
+                                # FullChargeCapacity는 현재 배터리 용량(%)
+                                if device_info.get('battery_capacity') == 'Unknown':
+                                    device_info['battery_capacity'] = str(full_charge_capacity)
+                
+                    # AppleSmartBattery IORegistry에서 정확한 배터리 건강도 정보 가져오기
+                    ioreg_result = subprocess.run(['idevicediagnostics', '-u', device_id, 'ioregentry', 'AppleSmartBattery'], 
+                                                 capture_output=True, text=True, check=True)
+                    
+                    if ioreg_result.stdout:
+                        ioreg_output = ioreg_result.stdout
+                        
+                        # NominalChargeCapacity 추출 (실제 최대 용량 mAh)
+                        nominal_match = re.search(r'<key>NominalChargeCapacity</key>\s*<integer>(\d+)</integer>', ioreg_output)
+                        
+                        # DesignCapacity 추출
+                        ioreg_design_match = re.search(r'<key>DesignCapacity</key>\s*<integer>(\d+)</integer>', ioreg_output)
+                        
+                        # CycleCount 추출 (IORegistry에서도 가져올 수 있음)
+                        ioreg_cycle_match = re.search(r'<key>CycleCount</key>\s*<integer>(\d+)</integer>', ioreg_output)
+                        
+                        if nominal_match and ioreg_design_match:
+                            nominal_capacity = int(nominal_match.group(1))
+                            design_capacity = int(ioreg_design_match.group(1))
+                            
+                            # 정확한 배터리 건강도 계산: NominalChargeCapacity / DesignCapacity * 100
+                            health_percentage = round((nominal_capacity / design_capacity) * 100, 1)
+                            
+                            device_info['battery_health'] = str(health_percentage)
+                            device_info['nominal_charge_capacity'] = str(nominal_capacity)
+                            device_info['health_calculation_method'] = 'ioreg_nominal_capacity'
+                            
+                            # DesignCapacity 업데이트 (더 정확한 값으로)
+                            device_info['design_capacity'] = str(design_capacity)
+                        
+                        # CycleCount 업데이트 (IORegistry에서 가져온 값이 있다면)
+                        if ioreg_cycle_match:
+                            device_info['cycle_count'] = ioreg_cycle_match.group(1)
+                                
+                except subprocess.CalledProcessError:
+                    pass
+                        
         except subprocess.CalledProcessError:
             return None
         
@@ -696,14 +836,36 @@ class BatteryMonitor:
                     print(f"  • 시리얼: {device['serial']}")
                 print(f"  • 연결: {device.get('connection', 'USB')}")
                 
-                # 배터리 정보 표시 (MobileDevice.framework로 가져온 경우)
+                # 배터리 정보 표시 (libimobiledevice로 가져온 경우)
                 if 'battery_capacity' in device and device['battery_capacity'] != 'Unknown':
-                    print(f"  🔋 배터리 잘어용 %: {device['battery_capacity']}")
+                    print(f"  🔋 배터리 잔량: {device['battery_capacity']}%")
                 if 'battery_charging' in device and device['battery_charging'] != 'Unknown':
                     charging_status = "충전 중" if device['battery_charging'] == 'True' else "방전 중"
                     print(f"  ⚡ 충전 상태: {charging_status}")
                 if 'battery_voltage' in device and device['battery_voltage'] != 'Unknown':
                     print(f"  ⚡ 전압: {device['battery_voltage']}V")
+                
+                # 배터리 건강도 및 사이클 정보 표시
+                if 'battery_health' in device and device['battery_health'] != 'Unknown':
+                    # 건강도 색상 결정
+                    try:
+                        health_value = float(device['battery_health'])
+                        if health_value >= 90:
+                            health_status = "💚 양호함"
+                        elif health_value >= 80:
+                            health_status = "🟡 양호한 상태"
+                        else:
+                            health_status = "🟥 주의 필요"
+                    except ValueError:
+                        health_status = ""
+                    
+                    print(f"  💚 배터리 건강도: {device['battery_health']}% {health_status}")
+                
+                if 'cycle_count' in device and device['cycle_count'] != 'Unknown':
+                    print(f"  🔄 사이클 수: {device['cycle_count']}회")
+                
+                if 'design_capacity' in device and device['design_capacity'] != 'Unknown':
+                    print(f"  🏢 설계 용량: {device['design_capacity']} mAh")
                 
                 # 방식에 따른 알림 메시지
                 if device.get('method') == 'MobileDevice.framework':
