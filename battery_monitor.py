@@ -67,10 +67,19 @@ class BatteryMonitor:
             
             # 1. libimobiledevice 사용 (가장 안전)
             if shutil.which('ideviceinfo'):
-                return self._get_ios_devices_libimobiledevice()
+                try:
+                    devices = self._get_ios_devices_libimobiledevice()
+                    if devices:
+                        return devices
+                except Exception as e:
+                    print(f"Warning: libimobiledevice failed: {e}")
             
             # 2. system_profiler 사용 (기본 정보만)
-            return self._get_ios_devices_system_profiler()
+            try:
+                return self._get_ios_devices_system_profiler()
+            except Exception as e:
+                print(f"Warning: system_profiler failed: {e}")
+                return []
             
             # MobileDevice.framework는 CLI에서만 사용하도록 임시로 비활성화
             # ios_devices = self._get_ios_devices_mobiledevice()
@@ -78,6 +87,8 @@ class BatteryMonitor:
             #     return ios_devices
         except Exception as e:
             print(f"iOS 디바이스 확인 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def _get_ios_devices_libimobiledevice(self):
@@ -692,32 +703,55 @@ class BatteryMonitor:
     
     def collect_all_data(self):
         """모든 배터리 데이터 수집"""
-        print("배터리 정보를 수집하는 중...")
-        
-        # system_profiler 데이터
-        sp_data = self.get_system_profiler_data()
-        sp_info = self.parse_system_profiler(sp_data)
-        
-        # ioreg 데이터
-        ioreg_data = self.get_ioreg_data()
-        ioreg_info = self.parse_ioreg_data(ioreg_data)
-        
-        # 전력 관리 데이터 (Low Power Mode 등)
-        pm_data = self.get_power_management_data()
-        pm_info = self.parse_power_management_data(pm_data)
-        
-        # 하드웨어 정보
-        hw_data = self.get_hardware_info()
-        hw_info = self.parse_hardware_info(hw_data)
-        
-        # iOS 디바이스 확인
-        self.ios_devices = self.check_ios_devices()
-        
-        # 데이터 합치기
-        self.battery_data.update(sp_info)
-        self.battery_data.update(ioreg_info)
-        self.battery_data.update(pm_info)
-        self.battery_data.update(hw_info)
+        try:
+            print("배터리 정보를 수집하는 중...")
+            
+            # system_profiler 데이터
+            try:
+                sp_data = self.get_system_profiler_data()
+                sp_info = self.parse_system_profiler(sp_data)
+                self.battery_data.update(sp_info)
+            except Exception as e:
+                print(f"Warning: Failed to get system_profiler data: {e}")
+            
+            # ioreg 데이터
+            try:
+                ioreg_data = self.get_ioreg_data()
+                ioreg_info = self.parse_ioreg_data(ioreg_data)
+                self.battery_data.update(ioreg_info)
+            except Exception as e:
+                print(f"Warning: Failed to get ioreg data: {e}")
+            
+            # 전력 관리 데이터 (Low Power Mode 등)
+            try:
+                pm_data = self.get_power_management_data()
+                pm_info = self.parse_power_management_data(pm_data)
+                self.battery_data.update(pm_info)
+            except Exception as e:
+                print(f"Warning: Failed to get power management data: {e}")
+            
+            # 하드웨어 정보
+            try:
+                hw_data = self.get_hardware_info()
+                hw_info = self.parse_hardware_info(hw_data)
+                self.battery_data.update(hw_info)
+            except Exception as e:
+                print(f"Warning: Failed to get hardware info: {e}")
+            
+            # iOS 디바이스 확인
+            try:
+                self.ios_devices = self.check_ios_devices()
+            except Exception as e:
+                print(f"Warning: Failed to check iOS devices: {e}")
+                self.ios_devices = []
+                
+        except Exception as e:
+            print(f"Error in collect_all_data: {e}")
+            import traceback
+            traceback.print_exc()
+            # Ensure ios_devices is always a list
+            if not hasattr(self, 'ios_devices'):
+                self.ios_devices = []
         
     def display_battery_info(self):
         """배터리 정보를 보기 좋게 표시"""

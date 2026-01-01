@@ -21,6 +21,7 @@ from battery_history import BatteryHistoryManager
 
 class BatteryMonitorGUI:
     def __init__(self):
+        """Initialize Battery Monitor GUI with enhanced error handling"""
         # Enhanced settings to fix menubar issues in macOS app bundle
         try:
             # Environment setup before creating Tkinter root window
@@ -28,10 +29,15 @@ class BatteryMonitorGUI:
             os.environ['TK_SILENCE_DEPRECATION'] = '1'
             # Disable macOS menubar
             os.environ['TKINTER_NO_MENUBAR'] = '1'
-        except:
-            pass
+        except Exception as e:
+            print(f"Warning: Failed to set environment variables: {e}")
             
-        self.root = tk.Tk()
+        # Initialize Tkinter root window with error handling
+        try:
+            self.root = tk.Tk()
+        except Exception as e:
+            print(f"Fatal error: Failed to initialize Tkinter: {e}")
+            raise
         
         # Complete menubar deactivation (try multiple methods)
         try:
@@ -39,8 +45,8 @@ class BatteryMonitorGUI:
             self.root.option_add('*tearOff', False)
             # Method 2: Disable macOS menu commands
             self.root.tk.call('set', 'tcl_platform(os)', 'unix')
-        except:
-            pass
+        except Exception as e:
+            print(f"Warning: Failed to configure menubar: {e}")
         
         self.root.title("🔋 Battery Monitor")
         self.root.geometry("800x900")
@@ -52,26 +58,44 @@ class BatteryMonitorGUI:
             self.root.createcommand('tk::mac::Quit', self.on_closing)
             # Prevent menu creation
             self.root.tk.call('package', 'require', 'Tk')
-        except:
-            pass
+        except Exception as e:
+            print(f"Warning: Failed to configure macOS menu: {e}")
         
         # macOS styling
-        self.setup_styles()
+        try:
+            self.setup_styles()
+        except Exception as e:
+            print(f"Warning: Failed to setup styles: {e}")
         
-        # Battery monitor instance
-        self.battery_monitor = BatteryMonitor()
+        # Battery monitor instance with error handling
+        try:
+            self.battery_monitor = BatteryMonitor()
+        except Exception as e:
+            print(f"Warning: Failed to initialize BatteryMonitor: {e}")
+            # Create empty monitor to prevent crashes
+            self.battery_monitor = None
         
-        # History manager instance
-        self.history_manager = BatteryHistoryManager()
+        # History manager instance with error handling
+        try:
+            self.history_manager = BatteryHistoryManager()
+        except Exception as e:
+            print(f"Warning: Failed to initialize BatteryHistoryManager: {e}")
+            # Create None to prevent crashes
+            self.history_manager = None
         
         # GUI setup
-        self.create_widgets()
+        try:
+            self.create_widgets()
+        except Exception as e:
+            print(f"Fatal error: Failed to create widgets: {e}")
+            raise
         
         # Auto refresh disabled - manual refresh only
         self.auto_refresh = False
         
-        # Initial data load
-        self.refresh_data()
+        # Initial data load (deferred to prevent blocking)
+        # Use after() to defer initial data load
+        self.root.after(100, self.refresh_data)
     
     def setup_styles(self):
         """Setup macOS styling"""
@@ -168,26 +192,51 @@ class BatteryMonitorGUI:
     
     def refresh_data(self):
         """Refresh data"""
+        # Check if battery monitor is initialized
+        if self.battery_monitor is None:
+            self.status_bar.config(text="Battery monitor not initialized")
+            return
+            
         # Status update
-        self.status_bar.config(text="Fetching data...")
-        self.root.update_idletasks()
+        try:
+            self.status_bar.config(text="Fetching data...")
+            self.root.update_idletasks()
+        except Exception as e:
+            print(f"Warning: Failed to update status bar: {e}")
         
         # Collect data in background
         def collect_data():
             try:
-                self.battery_monitor.collect_all_data()
-                # UI update on main thread
-                self.root.after(0, self.update_ui)
+                if self.battery_monitor is not None:
+                    self.battery_monitor.collect_all_data()
+                    # UI update on main thread
+                    self.root.after(0, self.update_ui)
+                else:
+                    self.root.after(0, lambda: self.status_bar.config(text="Battery monitor not available"))
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Data collection error: {e}"))
+                error_msg = f"Data collection error: {e}"
+                print(f"Error in collect_data: {error_msg}")
                 self.root.after(0, lambda: self.status_bar.config(text="Error occurred"))
+                # Only show error dialog if root window still exists
+                try:
+                    self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
+                except:
+                    pass
         
         # Run in separate thread
-        threading.Thread(target=collect_data, daemon=True).start()
+        try:
+            threading.Thread(target=collect_data, daemon=True).start()
+        except Exception as e:
+            print(f"Error: Failed to start data collection thread: {e}")
+            self.status_bar.config(text="Failed to start data collection")
     
     def update_ui(self):
         """Update UI"""
         try:
+            if self.battery_monitor is None:
+                self.status_bar.config(text="Battery monitor not available")
+                return
+                
             self.update_macos_battery()
             self.update_ios_devices()
             
@@ -196,19 +245,34 @@ class BatteryMonitorGUI:
             self.status_bar.config(text=f"Last update: {now}")
             
             # Save history (run in background)
-            self.save_history_data()
+            if self.history_manager is not None:
+                self.save_history_data()
             
         except Exception as e:
-            messagebox.showerror("Error", f"UI update error: {e}")
-            self.status_bar.config(text="UI update error")
+            error_msg = f"UI update error: {e}"
+            print(f"Error in update_ui: {error_msg}")
+            try:
+                self.status_bar.config(text="UI update error")
+                messagebox.showerror("Error", error_msg)
+            except:
+                pass
         
         # No auto refresh - manual refresh only
     
     def update_macos_battery(self):
         """Update macOS battery information"""
-        # Remove existing widgets
-        for widget in self.macos_frame.winfo_children():
-            widget.destroy()
+        try:
+            # Remove existing widgets
+            for widget in self.macos_frame.winfo_children():
+                widget.destroy()
+        except Exception as e:
+            print(f"Warning: Failed to clear macos_frame: {e}")
+        
+        if self.battery_monitor is None:
+            no_data_label = ttk.Label(self.macos_frame, text="Battery monitor not initialized.", 
+                                    style='Info.TLabel')
+            no_data_label.pack(pady=10)
+            return
         
         battery_data = self.battery_monitor.battery_data
         
@@ -322,9 +386,18 @@ class BatteryMonitorGUI:
     
     def update_ios_devices(self):
         """Update iOS device information"""
-        # Remove existing widgets
-        for widget in self.ios_frame.winfo_children():
-            widget.destroy()
+        try:
+            # Remove existing widgets
+            for widget in self.ios_frame.winfo_children():
+                widget.destroy()
+        except Exception as e:
+            print(f"Warning: Failed to clear ios_frame: {e}")
+        
+        if self.battery_monitor is None:
+            no_device_label = ttk.Label(self.ios_frame, text="Battery monitor not initialized.", 
+                                      style='Info.TLabel')
+            no_device_label.pack(pady=10)
+            return
         
         ios_devices = self.battery_monitor.ios_devices
         
@@ -486,6 +559,9 @@ class BatteryMonitorGUI:
     
     def save_history_data(self):
         """Save history data"""
+        if self.history_manager is None or self.battery_monitor is None:
+            return
+            
         def save_background():
             try:
                 # Save Mac battery data
@@ -500,7 +576,10 @@ class BatteryMonitorGUI:
                 print(f"History save error: {e}")
         
         # Run in background thread
-        threading.Thread(target=save_background, daemon=True).start()
+        try:
+            threading.Thread(target=save_background, daemon=True).start()
+        except Exception as e:
+            print(f"Error: Failed to start history save thread: {e}")
     
     def show_history(self):
         """Show history viewer"""
@@ -535,7 +614,16 @@ def main():
         print("\nProgram terminated.")
         sys.exit(0)
     except Exception as e:
-        print(f"Error occurred: {e}")
+        import traceback
+        error_msg = f"Fatal error occurred: {e}"
+        print(error_msg)
+        traceback.print_exc()
+        # Try to show error dialog if possible
+        try:
+            import tkinter.messagebox as mb
+            mb.showerror("Fatal Error", error_msg)
+        except:
+            pass
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -20,17 +20,31 @@ class BatteryHistoryManager:
         Args:
             db_path: 데이터베이스 파일 경로 (기본값: ~/Library/Application Support/BatteryMonitor/battery_history.db)
         """
-        if db_path is None:
-            # macOS 표준 위치에 데이터베이스 저장
-            app_support = Path.home() / "Library" / "Application Support" / "BatteryMonitor"
-            app_support.mkdir(parents=True, exist_ok=True)
-            db_path = app_support / "battery_history.db"
-        
-        self.db_path = str(db_path)
-        self.backup_dir = Path(self.db_path).parent / "backups"
-        self.backup_dir.mkdir(exist_ok=True)
-        
-        self._init_database()
+        try:
+            if db_path is None:
+                # macOS 표준 위치에 데이터베이스 저장
+                app_support = Path.home() / "Library" / "Application Support" / "BatteryMonitor"
+                try:
+                    app_support.mkdir(parents=True, exist_ok=True)
+                except (OSError, PermissionError) as e:
+                    print(f"Warning: Failed to create app support directory: {e}")
+                    # Fallback to current directory
+                    app_support = Path.cwd() / "battery_data"
+                    app_support.mkdir(parents=True, exist_ok=True)
+                db_path = app_support / "battery_history.db"
+            
+            self.db_path = str(db_path)
+            self.backup_dir = Path(self.db_path).parent / "backups"
+            try:
+                self.backup_dir.mkdir(exist_ok=True)
+            except (OSError, PermissionError) as e:
+                print(f"Warning: Failed to create backup directory: {e}")
+                self.backup_dir = None
+            
+            self._init_database()
+        except Exception as e:
+            print(f"Fatal error: Failed to initialize BatteryHistoryManager: {e}")
+            raise
     
     def _init_database(self):
         """데이터베이스 초기화 및 테이블 생성"""
