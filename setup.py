@@ -88,13 +88,12 @@ OPTIONS = {
         'battery_monitor',
         'battery_history',
     ],  # Explicitly include required modules
-    'packages': [],  # Empty packages list - we're using includes for modules
+    'packages': [],  # Empty - matplotlib loaded dynamically
     'frameworks': frameworks,  # Include necessary dylibs
-    'excludes': ['matplotlib', 'numpy', 'PIL', 'PyQt5', 'PyQt6', 'pandas'],  # Exclude unnecessary modules
-    'site_packages': False,  # Create standalone app without external dependencies
+    'excludes': ['matplotlib', 'numpy', 'pandas', 'PIL', 'PyQt5', 'PyQt6', 'test', 'unittest'],  # Exclude unnecessary modules
+    'site_packages': False,  # Create standalone app
     'optimize': 0,  # Disable optimization for better debugging
     'strip': False,  # Don't strip symbols for better debugging
-    'semi_standalone': False,  # Create fully standalone app
     'plist': {
         'CFBundleName': 'Battery Monitor',
         'CFBundleDisplayName': 'Battery Monitor',

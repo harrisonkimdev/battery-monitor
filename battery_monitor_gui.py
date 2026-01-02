@@ -1,630 +1,408 @@
 #!/usr/bin/env python3
 """
 macOS Battery Monitor GUI
-Battery monitoring tool similar to CoconutBattery - GUI version
+Battery monitoring tool with a modern, graphical UI
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
-import subprocess
-import json
-import re
-import sys
-import shutil
-import ctypes
-from ctypes import c_int, c_void_p, c_char_p, c_uint32, POINTER, Structure, CFUNCTYPE
-import time
+from tkinter import ttk, messagebox, Canvas
 import threading
+import math
 from datetime import datetime
+import sys
+import os
+
+# Import backend modules
 from battery_monitor import BatteryMonitor
 from battery_history import BatteryHistoryManager
 
-class BatteryMonitorGUI:
+# Color Palette (macOS inspired)
+COLORS = {
+    'bg': '#F5F5F7',
+    'card_bg': '#FFFFFF',
+    'text': '#1D1D1F',
+    'text_secondary': '#86868B',
+    'accent_blue': '#007AFF',
+    'accent_green': '#34C759',
+    'accent_yellow': '#FF9500',
+    'accent_red': '#FF3B30',
+    'border': '#D1D1D6',
+    'shadow': '#000000'
+}
+
+class ModernBatteryGUI:
     def __init__(self):
-        """Initialize Battery Monitor GUI with enhanced error handling"""
-        # Enhanced settings to fix menubar issues in macOS app bundle
-        try:
-            # Environment setup before creating Tkinter root window
-            import os
-            os.environ['TK_SILENCE_DEPRECATION'] = '1'
-            # Disable macOS menubar
-            os.environ['TKINTER_NO_MENUBAR'] = '1'
-        except Exception as e:
-            print(f"Warning: Failed to set environment variables: {e}")
-            
-        # Initialize Tkinter root window with error handling
-        try:
-            self.root = tk.Tk()
-        except Exception as e:
-            print(f"Fatal error: Failed to initialize Tkinter: {e}")
-            raise
+        self.setup_environment()
         
-        # Complete menubar deactivation (try multiple methods)
-        try:
-            # Method 1: Set empty menubar
-            self.root.option_add('*tearOff', False)
-            # Method 2: Disable macOS menu commands
-            self.root.tk.call('set', 'tcl_platform(os)', 'unix')
-        except Exception as e:
-            print(f"Warning: Failed to configure menubar: {e}")
-        
-        self.root.title("🔋 Battery Monitor")
-        self.root.geometry("800x900")
+        # Initialize Root
+        self.root = tk.Tk()
+        self.root.title("Battery Monitor")
+        self.root.geometry("500x700")
+        self.root.configure(bg=COLORS['bg'])
         self.root.resizable(True, True)
         
-        # Fix menubar issue when running app bundle on macOS (enhanced)
-        try:
-            # Don't explicitly set default menubar
-            self.root.createcommand('tk::mac::Quit', self.on_closing)
-            # Prevent menu creation
-            self.root.tk.call('package', 'require', 'Tk')
-        except Exception as e:
-            print(f"Warning: Failed to configure macOS menu: {e}")
+        self.setup_styles()
         
-        # macOS styling
-        try:
-            self.setup_styles()
-        except Exception as e:
-            print(f"Warning: Failed to setup styles: {e}")
+        # Backend initialization
+        self.battery_monitor = self.safe_init(BatteryMonitor)
+        self.history_manager = self.safe_init(BatteryHistoryManager)
         
-        # Battery monitor instance with error handling
-        try:
-            self.battery_monitor = BatteryMonitor()
-        except Exception as e:
-            print(f"Warning: Failed to initialize BatteryMonitor: {e}")
-            # Create empty monitor to prevent crashes
-            self.battery_monitor = None
+        # UI Components
+        self.create_widgets()
         
-        # History manager instance with error handling
-        try:
-            self.history_manager = BatteryHistoryManager()
-        except Exception as e:
-            print(f"Warning: Failed to initialize BatteryHistoryManager: {e}")
-            # Create None to prevent crashes
-            self.history_manager = None
-        
-        # GUI setup
-        try:
-            self.create_widgets()
-        except Exception as e:
-            print(f"Fatal error: Failed to create widgets: {e}")
-            raise
-        
-        # Auto refresh disabled - manual refresh only
-        self.auto_refresh = False
-        
-        # Initial data load (deferred to prevent blocking)
-        # Use after() to defer initial data load
+        # Start data collection
         self.root.after(100, self.refresh_data)
-    
+
+    def setup_environment(self):
+        """Setup environment variables for macOS"""
+        try:
+            os.environ['TK_SILENCE_DEPRECATION'] = '1'
+            os.environ['TKINTER_NO_MENUBAR'] = '1'
+        except Exception:
+            pass
+
+    def safe_init(self, cls):
+        try:
+            return cls()
+        except Exception as e:
+            print(f"Failed to initialize {cls.__name__}: {e}")
+            return None
+
     def setup_styles(self):
-        """Setup macOS styling"""
         style = ttk.Style()
-        
-        # Use macOS theme (when available)
         try:
             style.theme_use('aqua')
         except:
-            style.theme_use('default')
+            style.theme_use('clam')
+            
+        style.configure('TFrame', background=COLORS['bg'])
+        style.configure('Card.TFrame', background=COLORS['card_bg'])
         
-        # Define custom styles
-        style.configure('Title.TLabel', font=('SF Pro Display', 16, 'bold'))
-        style.configure('Header.TLabel', font=('SF Pro Display', 14, 'bold'))
-        style.configure('Info.TLabel', font=('SF Pro Display', 12))
-        style.configure('Status.TLabel', font=('SF Pro Display', 11))
+        # Custom Label Styles
+        style.configure('Header.TLabel', background=COLORS['bg'], foreground=COLORS['text'], font=('Helvetica', 24, 'bold'))
+        style.configure('Section.TLabel', background=COLORS['bg'], foreground=COLORS['text_secondary'], font=('Helvetica', 13, 'bold'))
         
-        # Set background color
-        self.root.configure(bg='#f0f0f0')
-    
+        style.configure('CardTitle.TLabel', background=COLORS['card_bg'], foreground=COLORS['text'], font=('Helvetica', 16, 'bold'))
+        style.configure('CardValue.TLabel', background=COLORS['card_bg'], foreground=COLORS['text'], font=('Helvetica', 28, 'bold'))
+        style.configure('CardLabel.TLabel', background=COLORS['card_bg'], foreground=COLORS['text_secondary'], font=('Helvetica', 12))
+        style.configure('CardSmall.TLabel', background=COLORS['card_bg'], foreground=COLORS['text_secondary'], font=('Helvetica', 11))
+
+        # Button Style
+        style.configure('Action.TButton', font=('Helvetica', 12))
+
     def create_widgets(self):
-        """Create GUI widgets"""
-        # Main container
-        main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Title
-        title_frame = ttk.Frame(main_frame)
-        title_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        title_label = ttk.Label(title_frame, text="🔋 Battery Monitor", style='Title.TLabel')
-        title_label.pack(side=tk.LEFT)
-        
-        # Button frame
-        button_frame = ttk.Frame(title_frame)
-        button_frame.pack(side=tk.RIGHT)
-        
-        # History button
-        history_btn = ttk.Button(button_frame, text="📊 History", command=self.show_history)
-        history_btn.pack(side=tk.RIGHT, padx=(0, 5))
-        
-        # Refresh button
-        refresh_btn = ttk.Button(button_frame, text="🔄 Refresh", command=self.refresh_data)
-        refresh_btn.pack(side=tk.RIGHT)
-        
-        # Scrollable main content
-        self.create_scrollable_content(main_frame)
-        
-        # Status bar
-        self.status_bar = ttk.Label(main_frame, text="Ready", style='Status.TLabel')
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
-    
-    def create_scrollable_content(self, parent):
-        """Create scrollable content area"""
-        # Setup scrollbar and canvas
-        canvas = tk.Canvas(parent, bg='#f0f0f0')
-        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        self.scrollable_frame = ttk.Frame(canvas)
-        
-        self.scrollable_frame.bind(
+        # Main Scrollable Container
+        self.canvas = Canvas(self.root, bg=COLORS['bg'], highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
+        self.scroll_frame = ttk.Frame(self.canvas, style='TFrame')
+
+        self.scroll_frame.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
+
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
-        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Bind resize to adjust width
+        self.root.bind('<Configure>', self.on_window_resize)
+
+        # Layout
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
         
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Header
+        header_frame = ttk.Frame(self.scroll_frame, style='TFrame', padding=(20, 20, 20, 10))
+        header_frame.pack(fill='x')
+        ttk.Label(header_frame, text="Battery Monitor", style='Header.TLabel').pack(side='left')
         
-        # Mouse wheel scroll support
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        # Create content frames
-        self.create_content_frames()
-    
-    def create_content_frames(self):
-        """Create content frames"""
-        # macOS battery section
-        self.macos_frame = self.create_section_frame("🖥️ macOS Battery")
-        
-        # iOS devices section
-        self.ios_frame = self.create_section_frame("📱 iOS Devices")
-    
-    def create_section_frame(self, title):
-        """Create section frame"""
-        # Section container
-        section_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding="15")
-        section_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        return section_frame
-    
+        # Buttons
+        btn_frame = ttk.Frame(header_frame, style='TFrame')
+        btn_frame.pack(side='right')
+        ttk.Button(btn_frame, text="History", command=self.show_history, style='Action.TButton').pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Refresh", command=self.refresh_data, style='Action.TButton').pack(side='left')
+
+        # Content Container
+        self.content_frame = ttk.Frame(self.scroll_frame, style='TFrame', padding=20)
+        self.content_frame.pack(fill='both', expand=True)
+
+        # Placeholders for dynamic content
+        self.mac_card = None
+        self.ios_container = None
+
+    def on_window_resize(self, event):
+        # Adjust the width of the inner frame to match the canvas
+        canvas_width = event.width
+        self.canvas.itemconfig(self.canvas_window, width=canvas_width)
+
     def refresh_data(self):
-        """Refresh data"""
-        # Check if battery monitor is initialized
-        if self.battery_monitor is None:
-            self.status_bar.config(text="Battery monitor not initialized")
+        if not self.battery_monitor:
             return
-            
-        # Status update
-        try:
-            self.status_bar.config(text="Fetching data...")
-            self.root.update_idletasks()
-        except Exception as e:
-            print(f"Warning: Failed to update status bar: {e}")
-        
-        # Collect data in background
-        def collect_data():
+
+        def task():
             try:
-                if self.battery_monitor is not None:
-                    self.battery_monitor.collect_all_data()
-                    # UI update on main thread
-                    self.root.after(0, self.update_ui)
-                else:
-                    self.root.after(0, lambda: self.status_bar.config(text="Battery monitor not available"))
+                self.battery_monitor.collect_all_data()
+                self.root.after(0, self.update_ui)
             except Exception as e:
-                error_msg = f"Data collection error: {e}"
-                print(f"Error in collect_data: {error_msg}")
-                self.root.after(0, lambda: self.status_bar.config(text="Error occurred"))
-                # Only show error dialog if root window still exists
-                try:
-                    self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
-                except:
-                    pass
-        
-        # Run in separate thread
-        try:
-            threading.Thread(target=collect_data, daemon=True).start()
-        except Exception as e:
-            print(f"Error: Failed to start data collection thread: {e}")
-            self.status_bar.config(text="Failed to start data collection")
-    
+                print(f"Error collecting data: {e}")
+
+        threading.Thread(target=task, daemon=True).start()
+
     def update_ui(self):
-        """Update UI"""
+        # Clear previous content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        data = self.battery_monitor.battery_data
+        
+        # --- macOS Battery Card ---
+        self.create_mac_card(data)
+
+        # --- iOS Devices ---
+        ios_label = ttk.Label(self.content_frame, text="CONNECTED DEVICES", style='Section.TLabel')
+        ios_label.pack(fill='x', pady=(20, 10))
+
+        if self.battery_monitor.ios_devices:
+            for device in self.battery_monitor.ios_devices:
+                self.create_ios_card(device)
+        else:
+            self.create_empty_state_card("No iOS devices connected")
+            
+        # Save history
+        if self.history_manager:
+            threading.Thread(target=self.save_history, daemon=True).start()
+
+    def create_card_frame(self, parent):
+        """Creates a styled card frame"""
+        # Using a canvas to draw a rounded rect background would be ideal, 
+        # but for simplicity and stability, we use a Frame with padding and a white background.
+        # To make it look like a card, we can add a border or shadow if we want, 
+        # but a clean white box on gray bg is sufficient for modern flat UI.
+        
+        frame = tk.Frame(parent, bg=COLORS['card_bg'], padx=20, pady=20)
+        # Add subtle border effect if desired, or just rely on color contrast
+        return frame
+
+    def create_mac_card(self, data):
+        card = self.create_card_frame(self.content_frame)
+        card.pack(fill='x', pady=(0, 10))
+
+        # Top Row: Icon + Name + Percentage
+        top_row = tk.Frame(card, bg=COLORS['card_bg'])
+        top_row.pack(fill='x', pady=(0, 15))
+
+        # Icon (Text based for now, can be image)
+        device_name = data.get('device_name', 'MacBook')
+        tk.Label(top_row, text="💻", font=("Apple Color Emoji", 30), bg=COLORS['card_bg']).pack(side='left', padx=(0, 10))
+        
+        name_frame = tk.Frame(top_row, bg=COLORS['card_bg'])
+        name_frame.pack(side='left')
+        tk.Label(name_frame, text=device_name, font=('Helvetica', 16, 'bold'), bg=COLORS['card_bg'], fg=COLORS['text']).pack(anchor='w')
+        tk.Label(name_frame, text=data.get('serial', 'Unknown Serial'), font=('Helvetica', 11), bg=COLORS['card_bg'], fg=COLORS['text_secondary']).pack(anchor='w')
+
+        # Big Percentage
         try:
-            if self.battery_monitor is None:
-                self.status_bar.config(text="Battery monitor not available")
-                return
-                
-            self.update_macos_battery()
-            self.update_ios_devices()
+            current = int(data.get('current_capacity', 0))
+        except:
+            current = 0
             
-            # Status update
-            now = datetime.now().strftime('%H:%M:%S')
-            self.status_bar.config(text=f"Last update: {now}")
-            
-            # Save history (run in background)
-            if self.history_manager is not None:
-                self.save_history_data()
-            
-        except Exception as e:
-            error_msg = f"UI update error: {e}"
-            print(f"Error in update_ui: {error_msg}")
+        tk.Label(top_row, text=f"{current}%", font=('Helvetica', 36, 'bold'), bg=COLORS['card_bg'], fg=COLORS['text']).pack(side='right')
+
+        # Visual Battery Indicator
+        self.draw_battery_bar(card, current, self.get_charging_status(data))
+
+        # Stats Grid
+        stats_frame = tk.Frame(card, bg=COLORS['card_bg'])
+        stats_frame.pack(fill='x', pady=20)
+        stats_frame.grid_columnconfigure(0, weight=1)
+        stats_frame.grid_columnconfigure(1, weight=1)
+
+        # Health Donut
+        health_container = tk.Frame(stats_frame, bg=COLORS['card_bg'])
+        health_container.grid(row=0, column=0, sticky='nsew')
+        
+        health_val = self.battery_monitor.calculate_battery_health() or 0
+        self.draw_donut_chart(health_container, health_val, "Health")
+
+        # Details Column
+        details_container = tk.Frame(stats_frame, bg=COLORS['card_bg'], padx=20)
+        details_container.grid(row=0, column=1, sticky='nsew')
+
+        self.add_detail_row(details_container, "Status", self.get_charging_status_text(data))
+        
+        time_rem = data.get('time_remaining')
+        if time_rem:
+             self.add_detail_row(details_container, "Time Left", self.battery_monitor.format_time_remaining(time_rem))
+        
+        cycle = data.get('cycle_count')
+        if cycle:
+            self.add_detail_row(details_container, "Cycles", f"{cycle}")
+
+        temp = data.get('temperature') # Raw value often needs formatting
+        if temp:
+             # Basic check if it's likely Celsius or Kelvin*10
+             try:
+                 t = float(temp)
+                 if t > 100: t = (t / 10.0) - 273.15
+                 self.add_detail_row(details_container, "Temp", f"{t:.1f}°C")
+             except:
+                 pass
+
+    def create_ios_card(self, device):
+        card = self.create_card_frame(self.content_frame)
+        card.pack(fill='x', pady=(0, 10))
+
+        top_row = tk.Frame(card, bg=COLORS['card_bg'])
+        top_row.pack(fill='x', pady=(0, 10))
+
+        # Icon
+        dev_type = device.get('model', 'iPhone')
+        icon = "📱" if "iPhone" in dev_type else "IPad" if "iPad" in dev_type else "device"
+        tk.Label(top_row, text=icon, font=("Apple Color Emoji", 24), bg=COLORS['card_bg']).pack(side='left', padx=(0, 10))
+
+        # Info
+        info_frame = tk.Frame(top_row, bg=COLORS['card_bg'])
+        info_frame.pack(side='left', fill='x', expand=True)
+        
+        tk.Label(info_frame, text=device.get('name', 'iOS Device'), font=('Helvetica', 14, 'bold'), bg=COLORS['card_bg'], fg=COLORS['text']).pack(anchor='w')
+        tk.Label(info_frame, text=f"{device.get('model', '')} • iOS {device.get('ios_version', '')}", font=('Helvetica', 11), bg=COLORS['card_bg'], fg=COLORS['text_secondary']).pack(anchor='w')
+
+        # Battery Right Side
+        cap = device.get('battery_capacity', 'N/A')
+        if cap != 'N/A':
+            tk.Label(top_row, text=f"{cap}%", font=('Helvetica', 20, 'bold'), bg=COLORS['card_bg'], fg=COLORS['text']).pack(side='right')
+
+        # Progress Bar for iOS
+        if cap != 'N/A':
             try:
-                self.status_bar.config(text="UI update error")
-                messagebox.showerror("Error", error_msg)
+                cap_val = int(float(cap))
+                self.draw_mini_progress(card, cap_val, device.get('battery_charging') == 'True')
             except:
                 pass
+
+        # Detail Row (Health)
+        if 'battery_health' in device:
+            health_frame = tk.Frame(card, bg=COLORS['card_bg'], pady=5)
+            health_frame.pack(fill='x')
+            h_val = device['battery_health']
+            tk.Label(health_frame, text=f"Health: {h_val}%", font=('Helvetica', 11, 'bold'), bg=COLORS['card_bg'], fg=COLORS['accent_green']).pack(side='left')
+
+    def create_empty_state_card(self, message):
+        card = self.create_card_frame(self.content_frame)
+        card.pack(fill='x', pady=(0, 10))
+        tk.Label(card, text="🔍", font=("Arial", 24), bg=COLORS['card_bg']).pack(pady=(0,5))
+        tk.Label(card, text=message, font=('Helvetica', 12), bg=COLORS['card_bg'], fg=COLORS['text_secondary']).pack()
+
+    def add_detail_row(self, parent, label, value):
+        row = tk.Frame(parent, bg=COLORS['card_bg'])
+        row.pack(fill='x', pady=2)
+        tk.Label(row, text=label, font=('Helvetica', 11), bg=COLORS['card_bg'], fg=COLORS['text_secondary']).pack(side='left')
+        tk.Label(row, text=value, font=('Helvetica', 11, 'bold'), bg=COLORS['card_bg'], fg=COLORS['text']).pack(side='right')
+
+    def draw_battery_bar(self, parent, percentage, is_charging):
+        # Canvas based modern battery bar
+        h = 24
+        w = 300 # Fixed width for stability
+        canvas = Canvas(parent, height=h, width=w, bg=COLORS['card_bg'], highlightthickness=0)
+        canvas.pack(pady=10)
         
-        # No auto refresh - manual refresh only
-    
-    def update_macos_battery(self):
-        """Update macOS battery information"""
-        try:
-            # Remove existing widgets
-            for widget in self.macos_frame.winfo_children():
-                widget.destroy()
-        except Exception as e:
-            print(f"Warning: Failed to clear macos_frame: {e}")
-        
-        if self.battery_monitor is None:
-            no_data_label = ttk.Label(self.macos_frame, text="Battery monitor not initialized.", 
-                                    style='Info.TLabel')
-            no_data_label.pack(pady=10)
-            return
-        
-        battery_data = self.battery_monitor.battery_data
-        
-        if not battery_data:
-            no_data_label = ttk.Label(self.macos_frame, text="Cannot retrieve battery information.", 
-                                    style='Info.TLabel')
-            no_data_label.pack(pady=10)
-            return
-        
-        # Basic information section
-        info_frame = ttk.Frame(self.macos_frame)
-        info_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # Left column
-        left_col = ttk.Frame(info_frame)
-        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # Right column
-        right_col = ttk.Frame(info_frame)
-        right_col.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # Basic information (left)
-        self.add_info_row(left_col, "📱 Device:", battery_data.get('device_name', 'N/A'))
-        self.add_info_row(left_col, "🔢 Serial:", battery_data.get('serial', 'N/A'))
-        self.add_info_row(left_col, "💾 Firmware:", battery_data.get('firmware_version', 'N/A'))
-        
-        # Current status (right)
-        current_capacity = battery_data.get('current_capacity')
-        if current_capacity:
-            self.add_info_row(right_col, "🔋 Current Charge:", f"{current_capacity}%")
-        
-        # Charging status
-        status = self.get_charging_status(battery_data)
-        self.add_info_row(right_col, "⚡ Status:", status)
-        
-        # Remaining time
-        time_remaining = battery_data.get('time_remaining')
-        if time_remaining:
-            formatted_time = self.battery_monitor.format_time_remaining(time_remaining)
-            self.add_info_row(right_col, "⏱️ Time Remaining:", formatted_time)
-        
-        # Separator
-        separator = ttk.Separator(self.macos_frame, orient='horizontal')
-        separator.pack(fill=tk.X, pady=10)
-        
-        # Health information
-        health_frame = ttk.Frame(self.macos_frame)
-        health_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        health_left = ttk.Frame(health_frame)
-        health_left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        health_right = ttk.Frame(health_frame)
-        health_right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # Cycle count
-        cycle_count = battery_data.get('cycle_count')
-        if cycle_count:
-            self.add_info_row(health_left, "🔄 Cycle Count:", f"{cycle_count} times")
-        
-        # Battery health
-        health = self.battery_monitor.calculate_battery_health()
-        if health:
-            color = self.get_health_color(health)
-            self.add_info_row(health_left, "💚 Battery Health:", f"{health}%", color)
-        
-        condition = battery_data.get('condition')
-        if condition:
-            self.add_info_row(health_right, "🏥 Condition:", condition)
-        
-        # Technical information
-        self.add_technical_info(battery_data)
-    
-    def add_technical_info(self, battery_data):
-        """Add technical information"""
-        # Separator
-        separator = ttk.Separator(self.macos_frame, orient='horizontal')
-        separator.pack(fill=tk.X, pady=10)
-        
-        tech_frame = ttk.Frame(self.macos_frame)
-        tech_frame.pack(fill=tk.X)
-        
-        tech_left = ttk.Frame(tech_frame)
-        tech_left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        tech_right = ttk.Frame(tech_frame)
-        tech_right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # Capacity information
-        design_capacity = battery_data.get('design_capacity')
-        apple_raw_max = battery_data.get('apple_raw_max_capacity')
-        apple_raw_current = battery_data.get('apple_raw_current_capacity')
-        
-        if design_capacity:
-            self.add_info_row(tech_left, "🏭 Design Capacity:", f"{design_capacity} mAh")
-        if apple_raw_max:
-            self.add_info_row(tech_left, "📊 Current Max Capacity:", f"{apple_raw_max} mAh")
-        if apple_raw_current:
-            self.add_info_row(tech_left, "⚡ Current Capacity:", f"{apple_raw_current} mAh")
-        
-        # Voltage/Current
-        voltage = battery_data.get('voltage')
-        if voltage:
-            voltage_v = self.battery_monitor.format_voltage(voltage)
-            self.add_info_row(tech_right, "⚡ Voltage:", f"{voltage_v}V")
-        
-        amperage = battery_data.get('amperage')
-        if amperage:
-            amperage_ma = self.battery_monitor.format_amperage(amperage)
-            self.add_info_row(tech_right, "🔌 Current:", f"{amperage_ma} mA")
-    
-    def update_ios_devices(self):
-        """Update iOS device information"""
-        try:
-            # Remove existing widgets
-            for widget in self.ios_frame.winfo_children():
-                widget.destroy()
-        except Exception as e:
-            print(f"Warning: Failed to clear ios_frame: {e}")
-        
-        if self.battery_monitor is None:
-            no_device_label = ttk.Label(self.ios_frame, text="Battery monitor not initialized.", 
-                                      style='Info.TLabel')
-            no_device_label.pack(pady=10)
-            return
-        
-        ios_devices = self.battery_monitor.ios_devices
-        
-        if not ios_devices:
-            no_device_frame = ttk.Frame(self.ios_frame)
-            no_device_frame.pack(fill=tk.X, pady=10)
+        # Determine Color
+        if percentage <= 20 and not is_charging:
+            color = COLORS['accent_red']
+        elif percentage <= 50 and not is_charging:
+            color = COLORS['accent_yellow']
+        else:
+            color = COLORS['accent_green']
             
-            no_device_label = ttk.Label(no_device_frame, text="🔍 No connected iOS devices found.", 
-                                      style='Info.TLabel')
-            no_device_label.pack()
-            
-            if not shutil.which('ideviceinfo'):
-                tip_label = ttk.Label(no_device_frame, 
-                                    text="📝 Install 'brew install libimobiledevice' for more detailed information.",
-                                    style='Status.TLabel')
-                tip_label.pack(pady=(5, 0))
-            return
+        if is_charging:
+            color = COLORS['accent_green']
+
+        # Background Track
+        canvas.create_rectangle(0, 0, w, h, fill='#E5E5EA', outline='')
         
-        # Display each iOS device
-        for i, device in enumerate(ios_devices):
-            self.create_ios_device_widget(device, i + 1)
-    
-    def create_ios_device_widget(self, device, index):
-        """Create iOS device widget"""
-        # Device frame
-        device_frame = ttk.LabelFrame(self.ios_frame, text=f"📱 Device #{index}", padding="10")
-        device_frame.pack(fill=tk.X, pady=(0, 10))
+        # Fill
+        fill_width = (w * percentage) / 100
+        canvas.create_rectangle(0, 0, fill_width, h, fill=color, outline='')
         
-        # Device basic information
-        info_frame = ttk.Frame(device_frame)
-        info_frame.pack(fill=tk.X, pady=(0, 10))
+        # Bolt Icon if charging
+        if is_charging:
+            bx, by = w/2, h/2
+            canvas.create_text(bx, by, text="⚡", font=("Arial", 14), fill="white")
+
+    def draw_mini_progress(self, parent, percentage, is_charging):
+        h = 6
+        w = 300
+        canvas = Canvas(parent, height=h, width=w, bg=COLORS['card_bg'], highlightthickness=0)
+        canvas.pack(pady=(5,0))
         
-        left_col = ttk.Frame(info_frame)
-        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        color = COLORS['accent_green']
+        if percentage <= 20: color = COLORS['accent_red']
+        if is_charging: color = COLORS['accent_green']
+
+        # Track
+        canvas.create_rectangle(0, 0, w, h, fill='#E5E5EA', outline='')
+        # Fill
+        fill_w = (w * percentage) / 100
+        canvas.create_rectangle(0, 0, fill_w, h, fill=color, outline='')
+
+    def draw_donut_chart(self, parent, percentage, label):
+        size = 100
+        canvas = Canvas(parent, width=size, height=size, bg=COLORS['card_bg'], highlightthickness=0)
+        canvas.pack()
         
-        right_col = ttk.Frame(info_frame)
-        right_col.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        x, y, r = size/2, size/2, 35
         
-        # Basic information
-        self.add_info_row(left_col, "• Name:", device.get('name', 'N/A'))
-        self.add_info_row(left_col, "• Model:", device.get('model', 'N/A'))
+        # Background Ring
+        canvas.create_oval(x-r, y-r, x+r, y+r, outline='#E5E5EA', width=8)
         
-        if device.get('ios_version', 'Unknown') != 'Unknown':
-            self.add_info_row(left_col, "• iOS:", device['ios_version'])
+        # Foreground Arc
+        start = 90
+        extent = -(percentage * 360) / 100
         
-        if device.get('serial', 'Unknown') != 'Unknown':
-            self.add_info_row(right_col, "• Serial:", device['serial'])
+        color = COLORS['accent_green']
+        if percentage < 80: color = COLORS['accent_yellow']
+        if percentage < 60: color = COLORS['accent_red']
         
-        self.add_info_row(right_col, "• Connection:", device.get('connection', 'USB'))
+        canvas.create_arc(x-r, y-r, x+r, y+r, start=start, extent=extent, outline=color, width=8, style='arc')
         
-        # Battery information (when fetched via MobileDevice.framework)
-        has_battery_info = False
-        
-        if device.get('battery_capacity', 'Unknown') != 'Unknown':
-            has_battery_info = True
-            capacity_color = self.get_capacity_color(device['battery_capacity'])
-            self.add_info_row(right_col, "🔋 Battery:", f"{device['battery_capacity']}%", capacity_color)
-        
-        if device.get('battery_charging', 'Unknown') != 'Unknown':
-            has_battery_info = True
-            charging_status = "Charging" if device['battery_charging'] == 'True' else "Discharging"
-            status_color = "#28a745" if device['battery_charging'] == 'True' else "#6c757d"
-            self.add_info_row(right_col, "⚡ Charging Status:", charging_status, status_color)
-        
-        if device.get('battery_voltage', 'Unknown') != 'Unknown':
-            has_battery_info = True
-            self.add_info_row(right_col, "⚡ Voltage:", f"{device['battery_voltage']}V")
-        
-        # 배터리 건강도 및 사이클 정보 표시
-        if device.get('battery_health', 'Unknown') != 'Unknown':
-            has_battery_info = True
-            try:
-                health_value = float(device['battery_health'])
-                health_color = self.get_health_color(health_value)
-            except ValueError:
-                health_color = None
-            self.add_info_row(right_col, "💚 Battery Health:", f"{device['battery_health']}%", health_color)
-        
-        if device.get('cycle_count', 'Unknown') != 'Unknown':
-            has_battery_info = True
-            self.add_info_row(right_col, "🔄 Cycle Count:", f"{device['cycle_count']} times")
-        
-        if device.get('design_capacity', 'Unknown') != 'Unknown':
-            has_battery_info = True
-            self.add_info_row(right_col, "🏢 Design Capacity:", f"{device['design_capacity']} mAh")
-        
-        # Separator
-        if has_battery_info:
-            separator = ttk.Separator(device_frame, orient='horizontal')
-            separator.pack(fill=tk.X, pady=5)
-        
-        # Connection method display
-        status_frame = ttk.Frame(device_frame)
-        status_frame.pack(fill=tk.X)
-        
-        if device.get('method') == 'libimobiledevice':
-            status_label = ttk.Label(status_frame, text="✅ Battery info retrieved via libimobiledevice", 
-                                   style='Status.TLabel', foreground='#28a745')
-            status_label.pack()
-        elif device.get('method') == 'MobileDevice.framework':
-            status_label = ttk.Label(status_frame, text="✅ Successfully connected via CoconutBattery method!", 
-                                   style='Status.TLabel', foreground='#28a745')
-            status_label.pack()
-        elif not shutil.which('ideviceinfo'):
-            status_label = ttk.Label(status_frame, 
-                                   text="⚠️ Recommend installing 'brew install libimobiledevice' for detailed information", 
-                                   style='Status.TLabel', foreground='#ffc107')
-            status_label.pack()
-    
-    def add_info_row(self, parent, label, value, color=None):
-        """Add information row"""
-        row_frame = ttk.Frame(parent)
-        row_frame.pack(fill=tk.X, pady=2)
-        
-        label_widget = ttk.Label(row_frame, text=label, style='Info.TLabel')
-        label_widget.pack(side=tk.LEFT)
-        
-        value_widget = ttk.Label(row_frame, text=value, style='Info.TLabel')
-        if color:
-            value_widget.configure(foreground=color)
-        value_widget.pack(side=tk.RIGHT)
-    
-    def get_charging_status(self, battery_data):
-        """Return charging status string"""
-        is_charging = battery_data.get('is_charging', battery_data.get('charging'))
-        fully_charged = battery_data.get('fully_charged')
-        external_connected = battery_data.get('external_connected')
-        
-        if is_charging == 'Yes':
+        # Text
+        canvas.create_text(x, y, text=f"{percentage}%", font=('Helvetica', 14, 'bold'), fill=COLORS['text'])
+        canvas.create_text(x, y+15, text=label, font=('Helvetica', 8), fill=COLORS['text_secondary'])
+
+    def get_charging_status(self, data):
+        return data.get('is_charging') == 'Yes' or data.get('charging') == 'Yes'
+
+    def get_charging_status_text(self, data):
+        if data.get('is_charging') == 'Yes' or data.get('charging') == 'Yes':
             return "Charging"
-        elif fully_charged == 'Yes':
-            return "Fully Charged"
-        elif external_connected == 'Yes':
-            return "Adapter Connected (Not Charging)"
-        else:
-            return "On Battery"
-    
-    def get_health_color(self, health):
-        """Return color based on battery health"""
-        if health >= 90:
-            return "#28a745"  # Green
-        elif health >= 80:
-            return "#ffc107"  # Yellow
-        else:
-            return "#dc3545"  # Red
-    
-    def get_capacity_color(self, capacity_str):
-        """Return color based on battery capacity"""
-        try:
-            capacity = float(capacity_str.replace('%', ''))
-            if capacity >= 50:
-                return "#28a745"  # Green
-            elif capacity >= 20:
-                return "#ffc107"  # Yellow
-            else:
-                return "#dc3545"  # Red
-        except:
-            return None
-    
-    def save_history_data(self):
-        """Save history data"""
-        if self.history_manager is None or self.battery_monitor is None:
-            return
-            
-        def save_background():
-            try:
-                # Save Mac battery data
-                if self.battery_monitor.battery_data:
-                    self.history_manager.save_mac_battery_data(self.battery_monitor.battery_data)
-                
-                # Save iOS device data
-                for device in self.battery_monitor.ios_devices:
-                    self.history_manager.save_ios_battery_data(device)
-                    
-            except Exception as e:
-                print(f"History save error: {e}")
-        
-        # Run in background thread
-        try:
-            threading.Thread(target=save_background, daemon=True).start()
-        except Exception as e:
-            print(f"Error: Failed to start history save thread: {e}")
-    
+        if data.get('fully_charged') == 'Yes':
+            return "Full"
+        if data.get('external_connected') == 'Yes':
+            return "AC Connected"
+        return "Discharging"
+
     def show_history(self):
-        """Show history viewer"""
         try:
             from history_viewer import HistoryViewer
-            viewer = HistoryViewer(parent=self.root)
+            HistoryViewer(parent=self.root)
         except Exception as e:
-            messagebox.showerror("Error", f"Cannot open history viewer: {e}")
-    
-    
+            messagebox.showerror("Error", f"Could not open history: {e}")
+
+    def save_history(self):
+        try:
+            if self.battery_monitor.battery_data:
+                self.history_manager.save_mac_battery_data(self.battery_monitor.battery_data)
+            for device in self.battery_monitor.ios_devices:
+                self.history_manager.save_ios_battery_data(device)
+        except Exception as e:
+            print(f"Background save error: {e}")
+
     def run(self):
-        """Run application"""
-        # Handle window close event
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        
-        # Run application
         self.root.mainloop()
-    
-    def on_closing(self):
-        """Handle application exit"""
-        self.auto_refresh = False
-        self.root.quit()
-        self.root.destroy()
 
 def main():
-    """Main function"""
-    try:
-        app = BatteryMonitorGUI()
-        app.run()
-        
-    except KeyboardInterrupt:
-        print("\nProgram terminated.")
-        sys.exit(0)
-    except Exception as e:
-        import traceback
-        error_msg = f"Fatal error occurred: {e}"
-        print(error_msg)
-        traceback.print_exc()
-        # Try to show error dialog if possible
-        try:
-            import tkinter.messagebox as mb
-            mb.showerror("Fatal Error", error_msg)
-        except:
-            pass
-        sys.exit(1)
+    app = ModernBatteryGUI()
+    app.run()
 
 if __name__ == "__main__":
     main()
