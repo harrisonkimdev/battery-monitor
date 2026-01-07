@@ -901,6 +901,9 @@ class BatteryMonitor:
                 if 'design_capacity' in device and device['design_capacity'] != 'Unknown':
                     print(f"  🏢 설계 용량: {device['design_capacity']} mAh")
                 
+                if 'nominal_charge_capacity' in device and device['nominal_charge_capacity'] != 'Unknown':
+                    print(f"  📊 현재 최대 용량: {device['nominal_charge_capacity']} mAh")
+                
                 # 방식에 따른 알림 메시지
                 if device.get('method') == 'MobileDevice.framework':
                     print(f"  ✅ CoconutBattery 방식으로 연결 성공!")

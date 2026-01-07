@@ -286,6 +286,16 @@ class ModernBatteryGUI:
             health_frame.pack(fill='x')
             h_val = device['battery_health']
             tk.Label(health_frame, text=f"Health: {h_val}%", font=('Helvetica', 11, 'bold'), bg=COLORS['card_bg'], fg=COLORS['accent_green']).pack(side='left')
+        
+        # Capacity Information
+        capacity_frame = tk.Frame(card, bg=COLORS['card_bg'], pady=5)
+        capacity_frame.pack(fill='x')
+        
+        if 'nominal_charge_capacity' in device and device['nominal_charge_capacity'] != 'Unknown':
+            tk.Label(capacity_frame, text=f"Max Capacity: {device['nominal_charge_capacity']} mAh", font=('Helvetica', 11), bg=COLORS['card_bg'], fg=COLORS['text_secondary']).pack(side='left')
+        
+        if 'design_capacity' in device and device['design_capacity'] != 'Unknown':
+            tk.Label(capacity_frame, text=f"Design: {device['design_capacity']} mAh", font=('Helvetica', 11), bg=COLORS['card_bg'], fg=COLORS['text_secondary']).pack(side='left', padx=(10, 0))
 
     def create_empty_state_card(self, message):
         card = self.create_card_frame(self.content_frame)
