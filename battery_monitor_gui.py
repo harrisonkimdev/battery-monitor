@@ -130,24 +130,81 @@ class ModernBatteryGUI:
         self.mac_card = None
         self.ios_container = None
 
+        # Loading overlay
+        self.loading_overlay = None
+        self.spinner_angle = 0
+        self.spinner_animating = False
+
     def on_window_resize(self, event):
         # Adjust the width of the inner frame to match the canvas
         # Since we bind to the canvas, event.width is the canvas's actual width
         if event.widget == self.canvas:
             self.canvas.itemconfig(self.canvas_window, width=event.width)
 
+    def show_loading(self):
+        """Show a loading overlay with animated spinner"""
+        if self.loading_overlay:
+            return
+        self.loading_overlay = tk.Frame(self.root, bg=COLORS['bg'])
+        self.loading_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        # Center container
+        center = tk.Frame(self.loading_overlay, bg=COLORS['bg'])
+        center.place(relx=0.5, rely=0.45, anchor='center')
+
+        self.spinner_canvas = Canvas(center, width=60, height=60, bg=COLORS['bg'], highlightthickness=0)
+        self.spinner_canvas.pack()
+
+        tk.Label(center, text="Reading battery data...", font=('Helvetica', 13),
+                 bg=COLORS['bg'], fg=COLORS['text_secondary']).pack(pady=(12, 0))
+
+        self.spinner_angle = 0
+        self.spinner_animating = True
+        self.animate_spinner()
+
+    def animate_spinner(self):
+        """Animate the loading spinner"""
+        if not self.spinner_animating or not self.loading_overlay:
+            return
+        c = self.spinner_canvas
+        c.delete('all')
+        cx, cy, r = 30, 30, 20
+        # Background ring
+        c.create_oval(cx - r, cy - r, cx + r, cy + r, outline='#E5E5EA', width=4)
+        # Spinning arc
+        c.create_arc(cx - r, cy - r, cx + r, cy + r,
+                     start=self.spinner_angle, extent=90,
+                     outline=COLORS['accent_blue'], width=4, style='arc')
+        self.spinner_angle = (self.spinner_angle + 15) % 360
+        self.root.after(40, self.animate_spinner)
+
+    def hide_loading(self):
+        """Hide the loading overlay"""
+        self.spinner_animating = False
+        if self.loading_overlay:
+            self.loading_overlay.destroy()
+            self.loading_overlay = None
+
     def refresh_data(self):
         if not self.battery_monitor:
             return
 
+        self.show_loading()
+
         def task():
             try:
                 self.battery_monitor.collect_all_data()
-                self.root.after(0, self.update_ui)
+                self.root.after(0, self.on_data_ready)
             except Exception as e:
                 print(f"Error collecting data: {e}")
+                self.root.after(0, self.hide_loading)
 
         threading.Thread(target=task, daemon=True).start()
+
+    def on_data_ready(self):
+        """Called when data collection is complete"""
+        self.hide_loading()
+        self.update_ui()
 
     def update_ui(self):
         # Clear previous content
