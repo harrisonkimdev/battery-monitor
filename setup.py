@@ -68,7 +68,7 @@ else:
     print(f"⚠️  Could not find sqlite3 at: {sqlite_path}")
 
 OPTIONS = {
-    'argv_emulation': True,
+    'argv_emulation': False,
     'iconfile': 'icon.icns' if os.path.exists('icon.icns') else None,  # Battery monitor icon
     'includes': [
         'tkinter',
