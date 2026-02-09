@@ -104,12 +104,12 @@ class ModernBatteryGUI:
         self.canvas_window = self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
-        # Bind resize to adjust width
-        self.root.bind('<Configure>', self.on_window_resize)
-
         # Layout
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+
+        # Bind resize to adjust width (bind to canvas, not root, to get correct width)
+        self.canvas.bind('<Configure>', self.on_window_resize)
         
         # Header
         header_frame = ttk.Frame(self.scroll_frame, style='TFrame', padding=(20, 20, 20, 10))
@@ -132,8 +132,9 @@ class ModernBatteryGUI:
 
     def on_window_resize(self, event):
         # Adjust the width of the inner frame to match the canvas
-        canvas_width = event.width
-        self.canvas.itemconfig(self.canvas_window, width=canvas_width)
+        # Since we bind to the canvas, event.width is the canvas's actual width
+        if event.widget == self.canvas:
+            self.canvas.itemconfig(self.canvas_window, width=event.width)
 
     def refresh_data(self):
         if not self.battery_monitor:
